@@ -45,7 +45,8 @@ workflows:
             zip -r Teleprompter.ipa Payload
             ls -lh Teleprompter.ipa
           else
-            echo "没有生成 .app"
+            echo "❌ 编译没有产出 .app，查看 build.log"
+            exit 1
           fi
     artifacts:
       - Teleprompter.ipa
