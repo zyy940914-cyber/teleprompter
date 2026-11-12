@@ -8,20 +8,19 @@ workflows:
       vars:
         XCODE_SCHEME: Teleprompter
     scripts:
-      - name: 安装 XcodeGen
+      - name: 生成工程并编译
         script: |
+          set +e
+          echo "PWD=$(pwd)"
+          ls -la
           if ! command -v xcodegen >/dev/null 2>&1; then
             brew install xcodegen
           fi
           xcodegen --version
-      - name: 生成 Xcode 工程
-        script: |
-          xcodegen generate
-          ls -d *.xcodeproj
-          xcodebuild -list -project Teleprompter.xcodeproj || true
-      - name: 编译（不签名）
-        script: |
-          set +e
+          xcodegen generate 2>&1 | tee -a build.log
+          echo "--- 生成后的目录 ---" | tee -a build.log
+          ls -d *.xcodeproj 2>&1 | tee -a build.log
+          echo "--- xcodebuild 开始 ---" | tee -a build.log
           xcodebuild \
             -project Teleprompter.xcodeproj \
             -scheme "$XCODE_SCHEME" \
@@ -31,20 +30,22 @@ workflows:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            build 2>&1 | tee build.log
-          echo "===xcodebuild 结束，退出码见上==="
-          grep -E "error:|warning: .*deprecated" build.log | head -60 || true
+            build 2>&1 | tee -a build.log
+          echo "--- 关键报错 ---"
+          grep -E "error:|does not exist|BUILD FAILED" build.log | head -80
       - name: 打包成 ipa
         script: |
           set +e
+          pwd
           mkdir -p Payload
-          APP="build/Build/Products/Release-iphoneos/Teleprompter.app"
-          if [ -d "$APP" ]; then
+          APP=$(find . -name "Teleprompter.app" -path "*Release-iphoneos*" -maxdepth 6 | head -1)
+          echo "找到 app: $APP"
+          if [ -n "$APP" ] && [ -d "$APP" ]; then
             cp -R "$APP" Payload/
             zip -r Teleprompter.ipa Payload
             ls -lh Teleprompter.ipa
           else
-            echo "没有生成 .app，跳过打包"
+            echo "没有生成 .app"
           fi
     artifacts:
       - Teleprompter.ipa
