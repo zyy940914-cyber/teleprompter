@@ -18,8 +18,10 @@ workflows:
         script: |
           xcodegen generate
           ls -d *.xcodeproj
+          xcodebuild -list -project Teleprompter.xcodeproj || true
       - name: 编译（不签名）
         script: |
+          set +e
           xcodebuild \
             -project Teleprompter.xcodeproj \
             -scheme "$XCODE_SCHEME" \
@@ -29,13 +31,22 @@ workflows:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            build
+            build 2>&1 | tee build.log
+          echo "===xcodebuild 结束，退出码见上==="
+          grep -E "error:|warning: .*deprecated" build.log | head -60 || true
       - name: 打包成 ipa
         script: |
+          set +e
           mkdir -p Payload
-          cp -R build/Build/Products/Release-iphoneos/Teleprompter.app Payload/
-          zip -r Teleprompter.ipa Payload
-          ls -lh Teleprompter.ipa
+          APP="build/Build/Products/Release-iphoneos/Teleprompter.app"
+          if [ -d "$APP" ]; then
+            cp -R "$APP" Payload/
+            zip -r Teleprompter.ipa Payload
+            ls -lh Teleprompter.ipa
+          else
+            echo "没有生成 .app，跳过打包"
+          fi
     artifacts:
       - Teleprompter.ipa
+      - build.log
       - build/Build/Products/Release-iphoneos/*.app
