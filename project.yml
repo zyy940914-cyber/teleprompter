@@ -15,8 +15,7 @@ targets:
     type: application
     platform: iOS
     sources:
-      - path: Sources
-    settings:
+      - path: Sources    settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.teleprompter.app
         PRODUCT_NAME: Teleprompter
@@ -49,3 +48,13 @@ targets:
         UIBackgroundModes:
           - audio
         ITSAppUsesNonExemptEncryption: false
+
+schemes:
+  Teleprompter:
+    build:
+      targets:
+        Teleprompter: all
+    run:
+      config: Debug
+    archive:
+      config: Release
