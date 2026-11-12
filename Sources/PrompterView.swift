@@ -15,6 +15,9 @@ struct PrompterView: View {
     @State private var showControls = true
     @State private var dragBase: CGPoint?
     @State private var floatAlert = false
+    @State private var floatAlertMessage = ""
+    @State private var floatStage = 0            // 0 空闲 / 1 带麦克风尝试 / 2 无麦克风尝试
+    @State private var lastBoxSize: CGSize = .zero
 
     @State private var scriptMap: ScriptMap?
     @State private var mapKey = ""
@@ -69,11 +72,14 @@ struct PrompterView: View {
                         }
                 )
 
-                // 画中画宿主（几乎不可见）
+                // 画中画宿主：必须真的占一块和字幕框一样大的面积，系统才认为画面"可见"。
+                // 用 0.01 透明度叠在上面，肉眼看不见，但系统认定它是显示中的画面。
                 LayerHost(view: $hostView)
-                    .frame(width: 2, height: 2)
+                    .frame(width: boxSize.width, height: boxSize.height)
                     .opacity(0.01)
-                    .position(x: 1, y: 1)
+                    .position(x: screen.width * store.style.boxCenterXRatio,
+                              y: screen.height * store.style.boxCenterYRatio)
+                    .allowsHitTesting(false)
 
                 // ===== 顶部状态 =====
                 VStack(spacing: 8) {
@@ -147,6 +153,23 @@ struct PrompterView: View {
             .onReceive(NotificationCenter.default.publisher(for: .audioInterruptionEnded)) { _ in
                 if store.style.mode == .voice && engine.isPlaying { speech.start() }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .pipStartFailed)) { _ in
+                handleFloatFailure()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .pipDidStart)) { _ in
+                if floatStage == 2 && store.style.mode == .voice {
+                    floatAlertMessage = """
+                    悬浮已经开了 ✅
+
+                    但为了让它能浮起来，AI 跟读这次先关掉了：抖音正在直播、麦克风被抖音占着，两个一起用画中画就起不来。
+
+                    · 悬浮状态下 → 用「匀速滚动」
+                    · 想用「AI 跟读」→ 别悬浮，用第二台手机/平板看提词
+                    """
+                    floatAlert = true
+                }
+                floatStage = 0
+            }
         }
         .statusBarHidden(true)
         .sheet(isPresented: $showSettings) {
@@ -161,7 +184,7 @@ struct PrompterView: View {
         .alert("悬浮窗口没有弹出来", isPresented: $floatAlert) {
             Button("知道了", role: .cancel) {}
         } message: {
-            Text("请确认 设置 → 通用 → 画中画 → 自动开启画中画 已打开，然后重试。")
+            Text(floatAlertMessage)
         }
         .alert("语音跟读提示", isPresented: Binding(
             get: { speech.permissionProblem != nil },
@@ -353,22 +376,47 @@ struct PrompterView: View {
     private func toggleFloat(boxSize: CGSize, layout: TextLayout, maxOffset: CGFloat) {
         if pip.isActive {
             pip.stop()
+            floatStage = 0
+            if store.style.mode == .voice { speech.start() }
             return
         }
+        lastBoxSize = boxSize
+        let wantsVoice = store.style.mode == .voice
+        if wantsVoice { prepareMapIfNeeded(layout: layout) }
+        floatStage = wantsVoice ? 1 : 2
+        startFloatAttempt(boxSize: boxSize, keepMic: wantsVoice)
+    }
+
+    private func startFloatAttempt(boxSize: CGSize, keepMic: Bool) {
         guard let host = hostView else { return }
+        if !keepMic { speech.stop() }
         pip.prepare(text: script.text, style: store.style, boxSize: boxSize)
-        pip.start(hostView: host, engine: engine)
-
-        if store.style.mode == .voice {
-            prepareMapIfNeeded(layout: layout)
-            speech.prepare(text: script.text)
-            speech.start()
-        }
         engine.start()
+        pip.start(hostView: host, engine: engine, keepMicrophone: keepMic)
+    }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
-            if !pip.isActive { floatAlert = true }
+    /// 第一轮（带麦克风）失败 → 关掉 AI 跟读、换成纯播放再看一次；还失败才弹窗
+    private func handleFloatFailure() {
+        if floatStage == 1 {
+            floatStage = 2
+            speech.stop()
+            pip.stop()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                startFloatAttempt(boxSize: lastBoxSize, keepMic: false)
+            }
+            return
         }
+        floatStage = 0
+        pip.stop()
+        let reason = pip.lastError ?? "系统没有允许画中画启动"
+        floatAlertMessage = """
+        \(reason)
+
+        先确认这两项，再退出 App 重新打开重试：
+        · 设置 → 通用 → 画中画 → 「自动开启画中画」是开的
+        · 设置 → 隐私与安全性 → 开发者模式 是开的
+        """
+        floatAlert = true
     }
 
     private func closeAll() {
