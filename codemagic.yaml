@@ -10,17 +10,16 @@ workflows:
     scripts:
       - name: 生成工程并编译
         script: |
-          set +e
+          set -e
+          set -o pipefail
           echo "PWD=$(pwd)"
-          ls -la
           if ! command -v xcodegen >/dev/null 2>&1; then
             brew install xcodegen
           fi
           xcodegen --version
-          xcodegen generate 2>&1 | tee -a build.log
-          echo "--- 生成后的目录 ---" | tee -a build.log
-          ls -d *.xcodeproj 2>&1 | tee -a build.log
-          echo "--- xcodebuild 开始 ---" | tee -a build.log
+          xcodegen generate
+          ls -d *.xcodeproj
+          echo "--- xcodebuild 开始 ---"
           xcodebuild \
             -project Teleprompter.xcodeproj \
             -scheme "$XCODE_SCHEME" \
@@ -30,24 +29,34 @@ workflows:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            build 2>&1 | tee -a build.log
-          echo "--- 关键报错 ---"
-          grep -E "error:|does not exist|BUILD FAILED" build.log | head -80
+            build 2>&1 | tee build.log
+          echo "--- 编译成功 ---"
       - name: 打包成 ipa
         script: |
-          set +e
-          pwd
+          set -e
           mkdir -p Payload
-          APP=$(find . -name "Teleprompter.app" -path "*Release-iphoneos*" -maxdepth 6 | head -1)
+          APP=$(find build -name "Teleprompter.app" -type d | head -1)
           echo "找到 app: $APP"
-          if [ -n "$APP" ] && [ -d "$APP" ]; then
-            cp -R "$APP" Payload/
-            zip -r Teleprompter.ipa Payload
-            ls -lh Teleprompter.ipa
-          else
-            echo "❌ 编译没有产出 .app，查看 build.log"
+          if [ -z "$APP" ]; then
+            echo "❌ 没有产出 .app"
+            tail -80 build.log || true
             exit 1
           fi
+          if [ ! -f "$APP/Teleprompter" ]; then
+            echo "❌ .app 里没有可执行文件（编译其实失败了）"
+            tail -80 build.log || true
+            exit 1
+          fi
+          cp -R "$APP" Payload/
+          rm -f Teleprompter.ipa
+          zip -qry Teleprompter.ipa Payload
+          echo "--- 校验 ipa ---"
+          unzip -l Teleprompter.ipa
+          if ! unzip -l Teleprompter.ipa | grep -q "Payload/Teleprompter.app/Teleprompter"; then
+            echo "❌ ipa 里没有可执行文件，作废"
+            exit 1
+          fi
+          ls -lh Teleprompter.ipa
     artifacts:
       - Teleprompter.ipa
       - build.log
