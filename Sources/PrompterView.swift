@@ -111,7 +111,7 @@ struct PrompterView: View {
 
                     if store.style.mode == .voice && showControls {
                         VStack(spacing: 3) {
-                            Text("🎤 \(speech.status) · 读到 \(Int(engine.progress * 100))%")
+                            Text(voiceStatusLine)
                                 .font(.caption2.weight(.semibold))
                                 .foregroundColor(.white)
                             if !speech.heard.isEmpty {
@@ -198,6 +198,10 @@ struct PrompterView: View {
     }
 
     // MARK: 控制条
+    private var voiceStatusLine: String {
+        "🎤 \(speech.status) · 读到 \(Int(engine.progress * 100))%"
+    }
+
     private func controlsPanel(boxSize: CGSize, layout: TextLayout, maxOffset: CGFloat) -> some View {
         VStack(spacing: 12) {
             HStack(spacing: 10) {
