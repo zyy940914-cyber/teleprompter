@@ -16,10 +16,6 @@ final class AudioSessionManager {
             try s.setCategory(.playAndRecord,
                               mode: .default,
                               options: [.mixWithOthers, .defaultToSpeaker, .allowBluetoothA2DP])
-            if #available(iOS 15.0, *) {
-                // 明确用标准麦克风模式，避免系统切到"语音隔离"导致混音失效
-                try? s.setMicrophoneMode(.standard)
-            }
             try s.setPreferredIOBufferDuration(0.01)
             try s.setActive(true)
             setupObservers()
