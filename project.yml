@@ -15,7 +15,8 @@ targets:
     type: application
     platform: iOS
     sources:
-      - path: Sources    settings:
+      - path: Sources
+    settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.teleprompter.app
         PRODUCT_NAME: Teleprompter
